@@ -1,0 +1,108 @@
+{
+  "config": {
+    "step": {
+      "user": {
+        "title": "Підключення до SignalCliNet.WsRpcServer",
+        "description": "WebSocket JSON-RPC міст до Signal. Залиш інвайт-код порожнім, якщо сервер працює без auth (loopback / довірена мережа).",
+        "data": {
+          "url": "URL сервера",
+          "verify_ssl": "Перевіряти TLS-сертифікат",
+          "ca_cert": "Власний CA-сертифікат (PEM)",
+          "account": "Акаунт-відправник (номер)",
+          "invite_code": "Інвайт-код"
+        },
+        "data_description": {
+          "url": "ws://host:9000 або wss://host:9443",
+          "ca_cert": "Встав ca.crt сервера, якщо він використовує авто-згенерований CA.",
+          "account": "Signal-акаунт, прив'язаний на сервері, напр. +380501234567.",
+          "invite_code": "Одноразовий код від адміна сервера (createInvite). Потрібен лише коли на сервері ввімкнено Auth."
+        }
+      },
+      "reauth_confirm": {
+        "title": "Повторна автентифікація",
+        "description": "Сервер відхилив токен (прострочений або відкликаний). Введи новий інвайт-код.",
+        "data": {
+          "invite_code": "Інвайт-код"
+        }
+      },
+      "reconfigure": {
+        "title": "Змінити підключення",
+        "data": {
+          "url": "URL сервера",
+          "verify_ssl": "Перевіряти TLS-сертифікат",
+          "ca_cert": "Власний CA-сертифікат (PEM)"
+        }
+      }
+    },
+    "error": {
+      "cannot_connect": "Не вдалося підключитися до сервера.",
+      "invalid_auth": "Сервер відхилив облікові дані.",
+      "invalid_invite": "Інвайт недійсний або прострочений.",
+      "unknown": "Неочікувана помилка."
+    },
+    "abort": {
+      "already_configured": "Цей акаунт уже налаштовано.",
+      "reauth_successful": "Повторна автентифікація успішна.",
+      "reconfigure_successful": "Налаштування оновлено."
+    }
+  },
+  "config_subentries": {
+    "recipient": {
+      "initiate_flow": {
+        "user": "Додати отримувача"
+      },
+      "entry_type": "Отримувач",
+      "step": {
+        "user": {
+          "title": "Додати отримувача",
+          "data": {
+            "name": "Назва",
+            "recipient": "Отримувач"
+          },
+          "data_description": {
+            "recipient": "Номер (+380…), Signal UUID або id групи."
+          }
+        }
+      },
+      "error": {
+        "already_configured": "Такий отримувач уже є."
+      }
+    }
+  },
+  "options": {
+    "step": {
+      "init": {
+        "data": {
+          "receive_messages": "Генерувати подію для вхідних повідомлень"
+        }
+      }
+    }
+  },
+  "entity": {
+    "binary_sensor": {
+      "connection": {
+        "name": "З'єднання"
+      }
+    }
+  },
+  "services": {
+    "send_message": {
+      "name": "Надіслати повідомлення",
+      "description": "Надіслати текстове повідомлення Signal одному чи кільком отримувачам.",
+      "fields": {
+        "config_entry_id": {
+          "name": "Акаунт",
+          "description": "З якого акаунта слати (потрібно лише якщо їх кілька)."
+        },
+        "recipients": {
+          "name": "Отримувачі",
+          "description": "Номери, UUID або id груп."
+        },
+        "message": {
+          "name": "Повідомлення",
+          "description": "Текст."
+        }
+      }
+    }
+  }
+}

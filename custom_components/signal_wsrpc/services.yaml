@@ -1,0 +1,19 @@
+send_message:
+  fields:
+    config_entry_id:
+      required: false
+      selector:
+        config_entry:
+          integration: signal_wsrpc
+    recipients:
+      required: true
+      example: '["+380501234567"]'
+      selector:
+        text:
+          multiple: true
+    message:
+      required: true
+      example: "Двері відчинено"
+      selector:
+        text:
+          multiline: true

@@ -1,0 +1,14 @@
+{
+  "domain": "signal_wsrpc",
+  "name": "Signal (WsRpcServer)",
+  "codeowners": ["@07artem132"],
+  "config_flow": true,
+  "dependencies": [],
+  "documentation": "https://github.com/07artem132/ha-signal-wsrpc",
+  "integration_type": "service",
+  "iot_class": "local_push",
+  "issue_tracker": "https://github.com/07artem132/ha-signal-wsrpc/issues",
+  "loggers": ["custom_components.signal_wsrpc"],
+  "requirements": [],
+  "version": "0.1.0"
+}
