@@ -34,7 +34,7 @@ EVENT_TYPES_TEXT_MESSAGES: Final = 1 << 0
 CONF_MODE: Final = "mode"
 MODE_MANAGED: Final = "managed"
 MODE_EXTERNAL: Final = "external"
-MANAGED_SERVER_VERSION: Final = "2.3.1"
+MANAGED_SERVER_VERSION: Final = "2.3.2"
 RELEASE_BASE_URL: Final = (
     "https://github.com/07artem132/SignalCliNet.WsRpcServer/releases/download/v{version}"
 )
