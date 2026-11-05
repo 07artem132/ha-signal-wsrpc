@@ -23,14 +23,33 @@ as Home Assistant events, so you don't need to poll.
 - **Connectivity** binary sensor.
 - Auto-reconnect with jittered backoff, a keepalive `ping`, and re-subscribe after a reconnect.
 - Server auth (`Server:Auth:Enabled=true`): one-time invite → ECDSA P-256 device key
-  (generated in HA) → bearer token + proof-of-possession. Expired tokens are renewed
-  automatically; a revoked token starts a re-auth flow.
+  (generated in HA) → bearer token (WS subprotocol) + proof-of-possession. An expired or revoked
+  token starts a re-auth flow (enter a new invite). Invite onboarding needs a WsRpcServer build
+  that accepts the `wsrpc-onboarding` subprotocol.
 - `wss://` with the server's auto-generated CA. Paste `ca.crt` into the setup form.
 
 ## Requirements
 
-- A running SignalCliNet.WsRpcServer with a linked Signal account.
 - Home Assistant 2025.3 or newer (config sub-entries).
+- **A running SignalCliNet.WsRpcServer with a linked Signal account.** The integration is a client
+  and does not start the server for you yet (a "managed mode" that downloads and runs it is planned).
+
+### Prerequisites: run WsRpcServer first
+
+The quickest way is on the same host as Home Assistant, on loopback, without auth:
+
+```bash
+git clone https://github.com/07artem132/SignalCliNet.WsRpcServer && cd SignalCliNet.WsRpcServer
+dotnet run --project src/SignalCliNet.WsRpcServer   # listens on ws://127.0.0.1:9000 (needs .NET 10 + JDK 25)
+```
+
+Link your Signal account once (`startLink` → scan the QR in Signal → *Linked devices* →
+`finishLink`). See the server's `docs/self-host.md`. For containers and `wss://`, see its
+`deploy/DEPLOYMENT.md`.
+
+> If Home Assistant runs in Docker or HAOS, `127.0.0.1` is the Home Assistant container itself.
+> Use the address of the host where the server runs. A non-loopback server needs TLS + auth (see
+> the server docs).
 
 ## Installation
 

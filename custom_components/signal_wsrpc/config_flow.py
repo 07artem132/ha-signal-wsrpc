@@ -29,9 +29,11 @@ from homeassistant.helpers.selector import (
 from .client import (
     ConnectionOptions,
     SignalWsRpcAuthError,
+    SignalWsRpcAuthRequiredError,
     SignalWsRpcCallError,
     SignalWsRpcClient,
     SignalWsRpcError,
+    SignalWsRpcTlsError,
     build_ssl_context,
     generate_device_key,
     redeem_invite,
@@ -73,8 +75,28 @@ class CannotConnect(Exception):
     """Server unreachable."""
 
 
+class TlsFailed(CannotConnect):
+    """TLS / certificate problem."""
+
+
 class InvalidAuth(Exception):
     """Token/PoP rejected."""
+
+
+class AuthRequired(InvalidAuth):
+    """Server has auth on and no invite was given."""
+
+
+def _map_error(err: SignalWsRpcError) -> Exception:
+    """Client error → flow error (keeps the reason text for the form)."""
+    _LOGGER.debug("WsRpcServer validation failed: %s", err)
+    if isinstance(err, SignalWsRpcAuthRequiredError):
+        return AuthRequired(str(err))
+    if isinstance(err, SignalWsRpcAuthError):
+        return InvalidAuth(str(err))
+    if isinstance(err, SignalWsRpcTlsError):
+        return TlsFailed(str(err))
+    return CannotConnect(str(err))
 
 
 class InvalidInvite(Exception):
@@ -85,7 +107,7 @@ async def _validate(hass: HomeAssistant, data: dict[str, Any], invite_code: str 
     """Redeem invite (optional) and open one full connection. Returns entry data."""
     url = data[CONF_URL].strip()
     if not _URL_RE.match(url):
-        raise CannotConnect
+        raise CannotConnect("URL must start with ws:// or wss://")
     ssl_context = await hass.async_add_executor_job(
         build_ssl_context, url, data.get(CONF_VERIFY_SSL, True), data.get(CONF_CA_CERT)
     )
@@ -99,11 +121,9 @@ async def _validate(hass: HomeAssistant, data: dict[str, Any], invite_code: str 
         except SignalWsRpcCallError as err:
             if err.code == INVALID_INVITE_CODE:
                 raise InvalidInvite from err
-            raise CannotConnect from err
-        except SignalWsRpcAuthError as err:
-            raise InvalidAuth from err
+            raise CannotConnect(f"redeemInvite: {err}") from err
         except SignalWsRpcError as err:
-            raise CannotConnect from err
+            raise _map_error(err) from err
         result[CONF_TOKEN] = token
         result[CONF_DEVICE_KEY] = device_key
 
@@ -119,10 +139,10 @@ async def _validate(hass: HomeAssistant, data: dict[str, Any], invite_code: str 
     )
     try:
         await client.connect_once()
-    except SignalWsRpcAuthError as err:
-        raise InvalidAuth from err
+    except SignalWsRpcCallError as err:
+        raise CannotConnect(f"{err.code} {err.message}") from err
     except SignalWsRpcError as err:
-        raise CannotConnect from err
+        raise _map_error(err) from err
     finally:
         await client.stop()
     return result
@@ -133,21 +153,35 @@ class SignalWsRpcConfigFlow(ConfigFlow, domain=DOMAIN):
 
     VERSION = 1
 
+    _error_detail: str = ""
+
     async def _run_validation(
         self, data: dict[str, Any], invite_code: str | None, errors: dict[str, str]
     ) -> dict[str, Any] | None:
+        self._error_detail = ""
         try:
             return await _validate(self.hass, data, invite_code)
         except InvalidInvite:
             errors[CONF_INVITE_CODE] = "invalid_invite"
-        except InvalidAuth:
+        except AuthRequired as err:
+            errors["base"] = "auth_required"
+            self._error_detail = str(err)
+        except InvalidAuth as err:
             errors["base"] = "invalid_auth"
-        except CannotConnect:
+            self._error_detail = str(err)
+        except TlsFailed as err:
+            errors["base"] = "tls_error"
+            self._error_detail = str(err)
+        except CannotConnect as err:
             errors["base"] = "cannot_connect"
+            self._error_detail = str(err)
         except Exception:
             _LOGGER.exception("Unexpected error during validation")
             errors["base"] = "unknown"
         return None
+
+    def _placeholders(self) -> dict[str, str]:
+        return {"error": self._error_detail or "-"}
 
     async def async_step_user(self, user_input: dict[str, Any] | None = None) -> ConfigFlowResult:
         """First step: server + sending account (+ invite when the server has auth on)."""
@@ -168,7 +202,9 @@ class SignalWsRpcConfigFlow(ConfigFlow, domain=DOMAIN):
                 vol.Optional(CONF_INVITE_CODE): PASSWORD,
             }
         )
-        return self.async_show_form(step_id="user", data_schema=schema, errors=errors)
+        return self.async_show_form(
+            step_id="user", data_schema=schema, errors=errors, description_placeholders=self._placeholders()
+        )
 
     async def async_step_reauth(self, entry_data: Mapping[str, Any]) -> ConfigFlowResult:
         """Token rejected/revoked: ask for a new invite."""
@@ -188,6 +224,7 @@ class SignalWsRpcConfigFlow(ConfigFlow, domain=DOMAIN):
             step_id="reauth_confirm",
             data_schema=vol.Schema({vol.Required(CONF_INVITE_CODE): PASSWORD}),
             errors=errors,
+            description_placeholders=self._placeholders(),
         )
 
     async def async_step_reconfigure(
@@ -204,6 +241,7 @@ class SignalWsRpcConfigFlow(ConfigFlow, domain=DOMAIN):
             step_id="reconfigure",
             data_schema=vol.Schema(_connection_schema(user_input or entry.data)),
             errors=errors,
+            description_placeholders=self._placeholders(),
         )
 
     @staticmethod

@@ -147,3 +147,24 @@ async def test_bad_token_starts_reauth(
     assert entry.state is ConfigEntryState.SETUP_ERROR
     flows = hass.config_entries.flow.async_progress()
     assert any(f["context"]["source"] == "reauth" for f in flows)
+
+
+async def test_auth_required_error(
+    hass: HomeAssistant, fake_server: str, server_state: FakeServerState
+) -> None:
+    server_state.auth_enabled = True
+    result = await hass.config_entries.flow.async_init(DOMAIN, context={"source": SOURCE_USER})
+    result = await hass.config_entries.flow.async_configure(
+        result["flow_id"], {CONF_URL: fake_server, CONF_ACCOUNT: ACCOUNT}
+    )
+    assert result["errors"] == {"base": "auth_required"}
+    assert "401" in result["description_placeholders"]["error"]
+
+
+async def test_cannot_connect_has_reason(hass: HomeAssistant, socket_enabled) -> None:
+    result = await hass.config_entries.flow.async_init(DOMAIN, context={"source": SOURCE_USER})
+    result = await hass.config_entries.flow.async_configure(
+        result["flow_id"], {CONF_URL: "http://127.0.0.1:1/", CONF_ACCOUNT: ACCOUNT}
+    )
+    assert result["errors"] == {"base": "cannot_connect"}
+    assert "ws://" in result["description_placeholders"]["error"]

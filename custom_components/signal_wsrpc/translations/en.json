@@ -35,8 +35,10 @@
       }
     },
     "error": {
-      "cannot_connect": "Cannot connect to the server.",
-      "invalid_auth": "The server rejected the credentials.",
+      "cannot_connect": "Cannot connect to the server: {error}. If Home Assistant runs in Docker/HAOS, 127.0.0.1 is Home Assistant itself — use the server host's address and make sure the server listens on it.",
+      "auth_required": "The server has authentication enabled ({error}). Enter an invite code.",
+      "invalid_auth": "The server rejected the credentials: {error}",
+      "tls_error": "TLS error: {error}. For the server's auto-generated CA paste its ca.crt into the CA field.",
       "invalid_invite": "Invite is invalid or has expired.",
       "unknown": "Unexpected error."
     },

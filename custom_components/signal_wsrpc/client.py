@@ -5,11 +5,13 @@ Deliberately free of Home Assistant imports so it can be unit-tested (and reused
 Wire contract (SignalCliNet.WsRpcServer):
 * method names are camelCase (`sendTextMessage`, `subscribe`, `ping`, ...), params by name;
 * server -> client notifications carry ``params`` as a one-element array (`[payload]`);
-* auth (only when the server runs with ``Server:Auth:Enabled=true``): send
-  ``authenticate {token}`` as the first frame, answer the ``pop.challenge {nonce, connId}``
-  notification with ``pop.prove {signature}`` where signature = ECDSA P-256/SHA-256 over
-  UTF-8(nonce + connId) in IEEE P1363 (raw r||s) form, base64. The ``pop.prove`` ack may carry
-  a renewed ``token`` (expired-token renewal), which must be persisted.
+* auth (only when the server runs with ``Server:Auth:Enabled=true``): offer the token as a
+  WebSocket subprotocol on upgrade (non-browser clients without a token get HTTP 401), answer the
+  ``pop.challenge {nonce, connId}`` notification with ``pop.prove {signature}`` where
+  signature = ECDSA P-256/SHA-256 over UTF-8(nonce + connId) in IEEE P1363 (raw r||s) form,
+  base64. The ``pop.prove`` ack may carry a renewed ``token``, which must be persisted;
+* onboarding (``redeemInvite``) on an auth-enabled server: offer the ``wsrpc-onboarding``
+  subprotocol, no token.
 """
 
 from __future__ import annotations
@@ -37,6 +39,8 @@ AUTH_CLOSE_CODE = 4401
 RATE_LIMIT_CLOSE_CODE = 4429
 AUTH_TIMEOUT_CLOSE_CODE = 4408
 
+ONBOARDING_SUBPROTOCOL = "wsrpc-onboarding"
+
 DEFAULT_TIMEOUT = 30.0
 KEEPALIVE_INTERVAL = 30.0
 MAX_BACKOFF = 60.0
@@ -52,6 +56,14 @@ class SignalWsRpcConnectionError(SignalWsRpcError):
 
 class SignalWsRpcAuthError(SignalWsRpcError):
     """Token rejected / expired / revoked (WS close 4401) or PoP failed."""
+
+
+class SignalWsRpcAuthRequiredError(SignalWsRpcAuthError):
+    """Server has auth enabled and refused a connection without a token (HTTP 401 on upgrade)."""
+
+
+class SignalWsRpcTlsError(SignalWsRpcConnectionError):
+    """TLS handshake / certificate verification failed."""
 
 
 class SignalWsRpcCallError(SignalWsRpcError):
@@ -134,6 +146,7 @@ class ConnectionOptions:
     device_key_pem: str | None = None
     ssl_context: ssl.SSLContext | bool = False
     timeout: float = DEFAULT_TIMEOUT
+    onboarding: bool = False
 
 
 NotificationHandler = Callable[[str, Any], None]
@@ -168,16 +181,41 @@ class SignalWsRpcConnection:
 
     async def open(self) -> None:
         """Connect and (if a token is configured) authenticate with proof-of-possession."""
+        protocols: tuple[str, ...] = ()
+        if self._options.token:
+            protocols = (self._options.token,)
+        elif self._options.onboarding:
+            protocols = (ONBOARDING_SUBPROTOCOL,)
         try:
-            self._ws = await self._session.ws_connect(
-                self._options.url,
-                ssl=self._options.ssl_context,
-                heartbeat=None,  # сервер сам шле app-level heartbeat; WS-ping не потрібен
-                timeout=aiohttp.ClientWSTimeout(ws_close=10),
-                max_msg_size=0,
+            self._ws = await asyncio.wait_for(
+                self._session.ws_connect(
+                    self._options.url,
+                    protocols=protocols,
+                    ssl=self._options.ssl_context,
+                    heartbeat=None,  # сервер сам шле app-level heartbeat; WS-ping не потрібен
+                    timeout=aiohttp.ClientWSTimeout(ws_close=10),
+                    max_msg_size=0,
+                ),
+                self._options.timeout,
             )
-        except (aiohttp.ClientError, OSError, asyncio.TimeoutError) as err:
+        except aiohttp.WSServerHandshakeError as err:
+            if err.status == 401:
+                raise SignalWsRpcAuthRequiredError("Server requires authentication (HTTP 401)") from err
+            if err.status == 403:
+                raise SignalWsRpcAuthError("Server refused the connection (HTTP 403, Origin)") from err
+            raise SignalWsRpcConnectionError(
+                f"WebSocket upgrade failed (HTTP {err.status}) — is this the WsRpcServer port?"
+            ) from err
+        except (aiohttp.ClientConnectorCertificateError, aiohttp.ClientSSLError, ssl.SSLError) as err:
+            raise SignalWsRpcTlsError(f"TLS error: {err}") from err
+        except aiohttp.ClientConnectorError as err:
+            raise SignalWsRpcConnectionError(
+                f"Cannot reach {err.host}:{err.port} ({err.os_error.strerror or err.os_error})"
+            ) from err
+        except (aiohttp.ClientError, OSError) as err:
             raise SignalWsRpcConnectionError(f"Cannot connect: {err}") from err
+        except asyncio.TimeoutError as err:
+            raise SignalWsRpcConnectionError("Connection timed out") from err
 
         loop = asyncio.get_running_loop()
         self._challenge = loop.create_future()
@@ -190,11 +228,7 @@ class SignalWsRpcConnection:
         assert self._ws is not None and self._challenge is not None
         if not self._options.device_key_pem:
             raise SignalWsRpcAuthError("Token configured without a device key")
-        # Fallback-шлях (перший кадр authenticate), а не субпротокол: лише так сервер дозволяє
-        # renewal простроченого токена через PoP.
-        await self._send_raw(
-            {"jsonrpc": "2.0", "method": "authenticate", "params": {"token": self._options.token}}
-        )
+        # Токен уже поданий субпротоколом на upgrade → сервер сам шле pop.challenge.
         try:
             nonce, conn_id = await asyncio.wait_for(
                 asyncio.shield(self._challenge), self._options.timeout
@@ -328,7 +362,9 @@ async def redeem_invite(
     device_key_pem: str,
 ) -> str:
     """Redeem a one-time invite; returns the new identity's access token (secret!)."""
-    conn = SignalWsRpcConnection(session, ConnectionOptions(url=url, ssl_context=ssl_context))
+    conn = SignalWsRpcConnection(
+        session, ConnectionOptions(url=url, ssl_context=ssl_context, onboarding=True)
+    )
     await conn.open()
     try:
         result = await conn.call(

@@ -40,12 +40,28 @@ def _verify(spki_b64: str, nonce: str, conn_id: str, sig_b64: str) -> bool:
 
 
 def make_app(state: FakeServerState) -> web.Application:
-    async def handler(request: web.Request) -> web.WebSocketResponse:
-        ws = web.WebSocketResponse()
+    async def handler(request: web.Request) -> web.StreamResponse:
+        offered = [p.strip() for p in request.headers.get("Sec-WebSocket-Protocol", "").split(",") if p.strip()]
+        token = next((p for p in offered if p.startswith("ptzh_")), None)
+        onboarding = "wsrpc-onboarding" in offered
+        if state.auth_enabled and token is None and not onboarding:
+            return web.Response(status=401, text="Unauthorized")  # як реальний сервер: не-браузер без токена
+
+        ws = web.WebSocketResponse(protocols=("wsrpc-onboarding",) if onboarding else ())
         await ws.prepare(request)
         state.sockets.append(ws)
         authed = not state.auth_enabled
         pending: tuple[str, str, str] | None = None  # nonce, connId, token
+
+        if state.auth_enabled and token is not None:
+            if token not in state.tokens:
+                await ws.close(code=4401, message=b"invalid")
+                return ws
+            nonce, conn_id = secrets.token_urlsafe(16), secrets.token_hex(8)
+            pending = (nonce, conn_id, token)
+            await ws.send_str(json.dumps(
+                {"jsonrpc": "2.0", "method": "pop.challenge", "params": {"nonce": nonce, "connId": conn_id}}
+            ))
 
         async def reply(req_id: Any, result: Any = None, error: dict | None = None) -> None:
             msg: dict[str, Any] = {"jsonrpc": "2.0", "id": req_id}
@@ -70,13 +86,6 @@ def make_app(state: FakeServerState) -> web.Application:
                 continue
 
             if not authed:
-                if method == "authenticate" and params.get("token") in state.tokens and pending is None:
-                    nonce, conn_id = secrets.token_urlsafe(16), secrets.token_hex(8)
-                    pending = (nonce, conn_id, params["token"])
-                    await ws.send_str(json.dumps(
-                        {"jsonrpc": "2.0", "method": "pop.challenge", "params": {"nonce": nonce, "connId": conn_id}}
-                    ))
-                    continue
                 if method == "pop.prove" and pending is not None:
                     nonce, conn_id, token = pending
                     if _verify(state.tokens[token], nonce, conn_id, params.get("signature", "")):
