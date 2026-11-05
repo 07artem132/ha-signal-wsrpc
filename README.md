@@ -115,10 +115,8 @@ actions:
 Event data: `account`, `source`, `source_uuid`, `source_name`, `message`, `group_id`,
 `group_name`, `timestamp`.
 
-> Receiving needs signal-cli running in receive mode on the server. With the default
-> `Server:GroupClaim:Enabled=false` the server starts `signal-cli` with `--receive-mode=manual`
-> (send-only), so no events arrive. You can still send. You can turn incoming events off in the
-> integration options.
+> Receiving needs the server's continuous receive mode. That is the default since WsRpcServer 2.1.0
+> (`SignalCli:ContinuousReceive=true`). You can turn incoming events off in the integration options.
 
 ## Limitations (v0.1)
 
