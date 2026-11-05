@@ -27,6 +27,7 @@ class FakeServerState:
     link_number: str = "+380500000000"
     link_requests: list[dict[str, Any]] = field(default_factory=list)
     accounts: list[str] = field(default_factory=list)  # вже прив'язані на сервері
+    link_gate: Any = None  # asyncio.Event: finishLink чекає на нього («телефон ще не сканував»)
 
 
 def _verify(spki_b64: str, nonce: str, conn_id: str, sig_b64: str) -> bool:
@@ -112,6 +113,8 @@ def make_app(state: FakeServerState) -> web.Application:
             elif method == "startLink":
                 await reply(req_id, {"sessionId": "link-1", "deviceLinkUri": "sgnl://linkdevice?uuid=x&pub_key=y"})
             elif method == "finishLink":
+                if state.link_gate is not None:
+                    await state.link_gate.wait()
                 state.link_requests.append(params)
                 await reply(req_id, {"number": state.link_number})
             elif method == "sendTextMessage":

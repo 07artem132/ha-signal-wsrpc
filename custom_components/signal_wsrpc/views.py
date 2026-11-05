@@ -5,7 +5,7 @@ from __future__ import annotations
 from aiohttp import web
 
 from homeassistant.components.http import HomeAssistantView
-from homeassistant.core import HomeAssistant
+from homeassistant.core import HomeAssistant, callback
 
 from .const import DOMAIN, QR_VIEW_URL
 
@@ -30,3 +30,16 @@ class LinkQrView(HomeAssistantView):
         if png is None:
             return web.Response(status=404)
         return web.Response(body=png, content_type="image/png", headers={"Cache-Control": "no-store"})
+
+
+@callback
+def async_register_qr_view(hass: HomeAssistant) -> None:
+    """Register the QR view once.
+
+    Called from the config flow too: a discovery/first-time flow runs before the integration is set
+    up (no config entry yet → ``async_setup`` never ran), so the view would otherwise 404.
+    """
+    data = hass.data.setdefault(DOMAIN, {})
+    if not data.get("qr_view_registered"):
+        hass.http.register_view(LinkQrView(hass))
+        data["qr_view_registered"] = True

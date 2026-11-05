@@ -65,7 +65,7 @@ from .const import (
     SUBENTRY_RECIPIENT,
 )
 from .manager import ManagedServerError, UnsupportedPlatformError, detect_bundle_arch, get_manager
-from .views import qr_store
+from .views import async_register_qr_view, qr_store
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -263,6 +263,7 @@ class SignalWsRpcConfigFlow(ConfigFlow, domain=DOMAIN):
             except (ManagedServerError, SignalWsRpcError) as err:
                 self._error_detail = str(err)
                 return self.async_abort(reason="managed_failed", description_placeholders=self._placeholders())
+            async_register_qr_view(self.hass)
             qr_store(self.hass)[self.flow_id] = await self.hass.async_add_executor_job(
                 _qr_png, link["deviceLinkUri"]
             )

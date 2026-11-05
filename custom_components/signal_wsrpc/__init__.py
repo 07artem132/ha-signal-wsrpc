@@ -31,7 +31,7 @@ from .client import (
     build_ssl_context,
 )
 from .manager import ManagedServerError, get_manager
-from .views import LinkQrView
+from .views import async_register_qr_view
 from .const import (
     ATTR_CONFIG_ENTRY_ID,
     ATTR_MESSAGE,
@@ -88,7 +88,7 @@ async def async_setup(hass: HomeAssistant, config: ConfigType) -> bool:
             return {"timestamp": result.get("timestamp") if isinstance(result, dict) else None}
         return None
 
-    hass.http.register_view(LinkQrView(hass))
+    async_register_qr_view(hass)
     hass.services.async_register(
         DOMAIN,
         SERVICE_SEND_MESSAGE,

@@ -113,3 +113,28 @@ async def test_user_menu_offers_addon_on_haos(hass: HomeAssistant) -> None:
     result = await hass.config_entries.flow.async_configure(result["flow_id"], {"next_step_id": "addon"})
     assert result["type"] is FlowResultType.ABORT
     assert result["reason"] == "addon_required"
+
+
+async def test_qr_served_before_integration_setup(
+    hass: HomeAssistant, fake_server: str, server_state: FakeServerState, hass_client_no_auth, mock_setup_entry
+) -> None:
+    """Discovery flow runs before async_setup: the signed QR URL must still serve the PNG (was 404)."""
+    import asyncio
+
+    server_state.link_gate = asyncio.Event()
+    assert await async_setup_component(hass, "http", {})
+    result = await hass.config_entries.flow.async_init(
+        DOMAIN, context={"source": SOURCE_HASSIO}, data=_info(fake_server)
+    )
+    result = await hass.config_entries.flow.async_configure(result["flow_id"], {})
+    assert result["type"] is FlowResultType.SHOW_PROGRESS
+    qr_url = result["description_placeholders"]["qr_url"]
+    assert "authSig=" in qr_url
+
+    client = await hass_client_no_auth()
+    resp = await client.get(qr_url)
+    assert resp.status == 200
+    assert (await resp.read()).startswith(b"\x89PNG")
+    assert (await client.get(qr_url.split("?")[0])).status == 401  # без підпису — ні
+    server_state.link_gate.set()
+    await hass.async_block_till_done()
