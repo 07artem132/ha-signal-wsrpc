@@ -183,7 +183,10 @@ class SignalWsRpcConfigFlow(ConfigFlow, domain=DOMAIN):
 
     async def async_step_addon(self, user_input: dict[str, Any] | None = None) -> ConfigFlowResult:
         """HAOS: the server comes from the add-on, which is set up via discovery (not from here)."""
-        return self.async_abort(reason="addon_required")
+        return self.async_abort(
+            reason="addon_required",
+            description_placeholders={"repo_url": "https://github.com/07artem132/ha-signal-wsrpc"},
+        )
 
     # ------------------------------------------------------------------ add-on (HAOS)
 
