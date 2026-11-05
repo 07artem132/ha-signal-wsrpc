@@ -49,6 +49,10 @@
       "hassio_confirm": {
         "title": "Add-on сервера Signal",
         "description": "Add-on **{addon}** запущено. Далі прив'яжи акаунт Signal через QR-код."
+      },
+      "link_retry": {
+        "title": "QR-код застарів",
+        "description": "Код не встигли відсканувати ({error}). Натисни **Підтвердити**, щоб показати новий QR-код."
       }
     },
     "error": {

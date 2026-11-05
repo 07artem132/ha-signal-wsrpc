@@ -46,6 +46,7 @@ from .client import (
     redeem_invite,
 )
 from .const import (
+    ADDON_DEFAULT_URL,
     CONF_ACCOUNT,
     CONF_CA_CERT,
     CONF_DEVICE_KEY,
@@ -182,7 +183,13 @@ class SignalWsRpcConfigFlow(ConfigFlow, domain=DOMAIN):
         return self.async_show_menu(step_id="user", menu_options=[first, "external"])
 
     async def async_step_addon(self, user_input: dict[str, Any] | None = None) -> ConfigFlowResult:
-        """HAOS: the server comes from the add-on, which is set up via discovery (not from here)."""
+        """HAOS: use the running add-on directly; if it isn't reachable, explain how to install it."""
+        if await self._addon_reachable(ADDON_DEFAULT_URL):
+            for entry in self._async_current_entries(include_ignore=False):
+                if entry.data.get(CONF_MODE) == MODE_ADDON:
+                    return self.async_abort(reason="already_configured")
+            self._addon_url = ADDON_DEFAULT_URL
+            return await self.async_step_link()
         return self.async_abort(
             reason="addon_required",
             description_placeholders={"repo_url": "https://github.com/07artem132/ha-signal-wsrpc"},
@@ -208,6 +215,19 @@ class SignalWsRpcConfigFlow(ConfigFlow, domain=DOMAIN):
         self._addon_name = discovery_info.name or self._addon_name
         self.context["title_placeholders"] = {"name": self._addon_name}
         return await self.async_step_hassio_confirm()
+
+    async def _addon_reachable(self, url: str) -> bool:
+        """Is a WsRpcServer (the add-on) answering on this loopback URL?"""
+        conn = SignalWsRpcConnection(
+            async_get_clientsession(self.hass), ConnectionOptions(url=url, timeout=5)
+        )
+        try:
+            await conn.open()
+            return await conn.call("ping", timeout=5) == "pong"
+        except (SignalWsRpcError, asyncio.TimeoutError):
+            return False
+        finally:
+            await conn.close()
 
     async def async_step_hassio_confirm(self, user_input: dict[str, Any] | None = None) -> ConfigFlowResult:
         """Confirm before showing the link QR."""
@@ -282,9 +302,17 @@ class SignalWsRpcConfigFlow(ConfigFlow, domain=DOMAIN):
         try:
             self._account = self._link_task.result()
         except (SignalWsRpcError, asyncio.TimeoutError) as err:
+            # Не скануємо вчасно — не закриваємо flow (discovery б загубився), а пропонуємо новий QR.
             self._error_detail = str(err) or "QR was not scanned in time"
-            return self.async_show_progress_done(next_step_id="managed_failed")
+            self._link_task = None
+            return self.async_show_progress_done(next_step_id="link_retry")
         return self.async_show_progress_done(next_step_id="managed_finish")
+
+    async def async_step_link_retry(self, user_input: dict[str, Any] | None = None) -> ConfigFlowResult:
+        """QR expired or linking failed: one click → fresh QR."""
+        if user_input is None:
+            return self.async_show_form(step_id="link_retry", description_placeholders=self._placeholders())
+        return await self.async_step_link()
 
     async def async_step_managed_finish(self, user_input: dict[str, Any] | None = None) -> ConfigFlowResult:
         """Create the managed entry for the freshly linked account."""

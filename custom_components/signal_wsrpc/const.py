@@ -35,10 +35,11 @@ CONF_MODE: Final = "mode"
 MODE_MANAGED: Final = "managed"
 MODE_EXTERNAL: Final = "external"
 MODE_ADDON: Final = "addon"
+ADDON_DEFAULT_URL: Final = "ws://127.0.0.1:9876"  # порт add-on'а за замовчуванням (host network)
 MANAGED_SERVER_VERSION: Final = "2.3.2"
 RELEASE_BASE_URL: Final = (
     "https://github.com/07artem132/SignalCliNet.WsRpcServer/releases/download/v{version}"
 )
 LINK_DEVICE_NAME: Final = "Home Assistant"
-LINK_TIMEOUT: Final = 150.0
+LINK_TIMEOUT: Final = 170.0
 QR_VIEW_URL: Final = "/api/signal_wsrpc/link_qr/{flow_id}"

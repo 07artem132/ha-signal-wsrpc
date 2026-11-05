@@ -49,6 +49,10 @@
       "hassio_confirm": {
         "title": "Signal server add-on",
         "description": "The **{addon}** add-on is running. Continue to link your Signal account with a QR code."
+      },
+      "link_retry": {
+        "title": "QR code expired",
+        "description": "The code was not scanned in time ({error}). Press **Submit** to show a new QR code."
       }
     },
     "error": {

@@ -101,16 +101,18 @@ async def test_addon_entry_cannot_be_reconfigured(hass: HomeAssistant) -> None:
     assert result["reason"] == "managed_no_reconfigure"
 
 
-async def test_user_menu_offers_addon_on_haos(hass: HomeAssistant) -> None:
+async def test_user_menu_offers_addon_on_haos(hass: HomeAssistant, socket_enabled) -> None:
     from unittest.mock import patch
 
     from homeassistant.config_entries import SOURCE_USER
 
-    with patch("custom_components.signal_wsrpc.config_flow.is_hassio", return_value=True):
+    with patch("custom_components.signal_wsrpc.config_flow.is_hassio", return_value=True), patch(
+        "custom_components.signal_wsrpc.config_flow.ADDON_DEFAULT_URL", "ws://127.0.0.1:1"
+    ):
         result = await hass.config_entries.flow.async_init(DOMAIN, context={"source": SOURCE_USER})
-    assert result["type"] is FlowResultType.MENU
-    assert result["menu_options"] == ["addon", "external"]
-    result = await hass.config_entries.flow.async_configure(result["flow_id"], {"next_step_id": "addon"})
+        assert result["type"] is FlowResultType.MENU
+        assert result["menu_options"] == ["addon", "external"]
+        result = await hass.config_entries.flow.async_configure(result["flow_id"], {"next_step_id": "addon"})
     assert result["type"] is FlowResultType.ABORT
     assert result["reason"] == "addon_required"
 
@@ -138,3 +140,52 @@ async def test_qr_served_before_integration_setup(
     assert (await client.get(qr_url.split("?")[0])).status == 401  # без підпису — ні
     server_state.link_gate.set()
     await hass.async_block_till_done()
+
+
+async def test_link_timeout_offers_new_qr(
+    hass: HomeAssistant, fake_server: str, server_state: FakeServerState, mock_setup_entry
+) -> None:
+    """QR not scanned in time → retry step (flow and discovery survive) → new QR → entry."""
+    from unittest.mock import patch
+
+    assert await async_setup_component(hass, "http", {})
+    with patch("custom_components.signal_wsrpc.config_flow.LINK_TIMEOUT", 0.05):
+        import asyncio
+
+        server_state.link_gate = asyncio.Event()  # телефон «не сканує» до таймауту
+        # Відпускаємо fake-обробник трохи після таймауту, щоб close-handshake не чекав 10 с.
+        asyncio.get_running_loop().call_later(0.3, server_state.link_gate.set)
+        result = await hass.config_entries.flow.async_init(
+            DOMAIN, context={"source": SOURCE_HASSIO}, data=_info(fake_server)
+        )
+        result = await hass.config_entries.flow.async_configure(result["flow_id"], {})
+        result = await _run_progress(hass, result)
+        assert result["type"] is FlowResultType.FORM
+        assert result["step_id"] == "link_retry"
+
+        await asyncio.sleep(0.4)  # друга спроба: телефон сканує одразу
+        result = await hass.config_entries.flow.async_configure(result["flow_id"], {})
+        result = await _run_progress(hass, result)
+    assert result["type"] is FlowResultType.CREATE_ENTRY, result
+    assert result["data"][CONF_MODE] == MODE_ADDON
+
+
+async def test_user_addon_option_links_running_addon(
+    hass: HomeAssistant, fake_server: str, server_state: FakeServerState, mock_setup_entry
+) -> None:
+    """Discovery lost (e.g. flow closed): «Use the add-on» connects to the running add-on itself."""
+    from unittest.mock import patch
+
+    from homeassistant.config_entries import SOURCE_USER
+
+    assert await async_setup_component(hass, "http", {})
+    with patch("custom_components.signal_wsrpc.config_flow.is_hassio", return_value=True), patch(
+        "custom_components.signal_wsrpc.config_flow.ADDON_DEFAULT_URL", _url(fake_server)
+    ):
+        result = await hass.config_entries.flow.async_init(DOMAIN, context={"source": SOURCE_USER})
+        result = await hass.config_entries.flow.async_configure(result["flow_id"], {"next_step_id": "addon"})
+        assert result["type"] is FlowResultType.SHOW_PROGRESS
+        assert result["step_id"] == "link"
+        result = await _run_progress(hass, result)
+    assert result["type"] is FlowResultType.CREATE_ENTRY, result
+    assert result["data"] == {CONF_MODE: MODE_ADDON, CONF_URL: _url(fake_server), CONF_ACCOUNT: "+380500000000"}

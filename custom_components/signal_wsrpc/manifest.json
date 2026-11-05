@@ -10,5 +10,5 @@
   "issue_tracker": "https://github.com/07artem132/ha-signal-wsrpc/issues",
   "loggers": ["custom_components.signal_wsrpc"],
   "requirements": ["segno==1.6.6"],
-  "version": "0.3.3"
+  "version": "0.3.4"
 }
