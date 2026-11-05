@@ -99,3 +99,17 @@ async def test_addon_entry_cannot_be_reconfigured(hass: HomeAssistant) -> None:
     result = await entry.start_reconfigure_flow(hass)
     assert result["type"] is FlowResultType.ABORT
     assert result["reason"] == "managed_no_reconfigure"
+
+
+async def test_user_menu_offers_addon_on_haos(hass: HomeAssistant) -> None:
+    from unittest.mock import patch
+
+    from homeassistant.config_entries import SOURCE_USER
+
+    with patch("custom_components.signal_wsrpc.config_flow.is_hassio", return_value=True):
+        result = await hass.config_entries.flow.async_init(DOMAIN, context={"source": SOURCE_USER})
+    assert result["type"] is FlowResultType.MENU
+    assert result["menu_options"] == ["addon", "external"]
+    result = await hass.config_entries.flow.async_configure(result["flow_id"], {"next_step_id": "addon"})
+    assert result["type"] is FlowResultType.ABORT
+    assert result["reason"] == "addon_required"

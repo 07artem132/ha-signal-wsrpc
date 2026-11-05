@@ -6,7 +6,8 @@
         "description": "How should Home Assistant reach Signal?",
         "menu_options": {
           "managed": "Set everything up for me (recommended)",
-          "external": "Connect to my own WsRpcServer"
+          "external": "Connect to my own WsRpcServer",
+          "addon": "Use the Signal add-on (recommended)"
         }
       },
       "external": {
@@ -64,7 +65,8 @@
       "reconfigure_successful": "Reconfiguration was successful.",
       "unsupported_platform": "Managed mode is not available on this system: {error}. Choose \"Connect to my own WsRpcServer\" instead.",
       "managed_failed": "Setting up the Signal server failed: {error}",
-      "managed_no_reconfigure": "The server is managed by Home Assistant; there is nothing to reconfigure."
+      "managed_no_reconfigure": "The server is managed by Home Assistant; there is nothing to reconfigure.",
+      "addon_required": "The Signal server runs as a Home Assistant add-on here. Install it: Settings → Add-ons → Add-on Store → ⋮ → Repositories → add https://github.com/07artem132/ha-signal-wsrpc → install **Signal WsRpcServer** → Start. A minute after it starts, Home Assistant shows it under Settings → Devices & services → **Discovered**: click Configure there and scan the QR code."
     },
     "progress": {
       "install": "Downloading and installing the Signal server (~150 MB, one time). This can take a few minutes.",

@@ -24,6 +24,7 @@ from homeassistant.const import CONF_NAME
 from homeassistant.core import HomeAssistant, callback
 from homeassistant.components.http.auth import async_sign_path
 from homeassistant.helpers.aiohttp_client import async_get_clientsession
+from homeassistant.helpers.hassio import is_hassio
 from homeassistant.helpers.service_info.hassio import HassioServiceInfo
 from homeassistant.helpers.selector import (
     TextSelector,
@@ -176,7 +177,13 @@ class SignalWsRpcConfigFlow(ConfigFlow, domain=DOMAIN):
 
     async def async_step_user(self, user_input: dict[str, Any] | None = None) -> ConfigFlowResult:
         """Choose: let the integration run the server, or connect to an existing one."""
-        return self.async_show_menu(step_id="user", menu_options=["managed", "external"])
+        # HAOS / Supervised: HA у musl-контейнері, managed тут неможливий — замість нього add-on.
+        first = "addon" if is_hassio(self.hass) else "managed"
+        return self.async_show_menu(step_id="user", menu_options=[first, "external"])
+
+    async def async_step_addon(self, user_input: dict[str, Any] | None = None) -> ConfigFlowResult:
+        """HAOS: the server comes from the add-on, which is set up via discovery (not from here)."""
+        return self.async_abort(reason="addon_required")
 
     # ------------------------------------------------------------------ add-on (HAOS)
 

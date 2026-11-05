@@ -6,7 +6,8 @@
         "description": "Як Home Assistant має підключатися до Signal?",
         "menu_options": {
           "managed": "Налаштувати все автоматично (рекомендовано)",
-          "external": "Підключитися до власного WsRpcServer"
+          "external": "Підключитися до власного WsRpcServer",
+          "addon": "Використати add-on Signal (рекомендовано)"
         }
       },
       "external": {
@@ -64,7 +65,8 @@
       "reconfigure_successful": "Налаштування оновлено.",
       "unsupported_platform": "Автоматичний режим недоступний на цій системі: {error}. Оберіть «Підключитися до власного WsRpcServer».",
       "managed_failed": "Не вдалося налаштувати сервер Signal: {error}",
-      "managed_no_reconfigure": "Сервером керує Home Assistant — тут нічого переналаштовувати."
+      "managed_no_reconfigure": "Сервером керує Home Assistant — тут нічого переналаштовувати.",
+      "addon_required": "Тут сервер Signal працює як add-on Home Assistant. Встанови його: Settings → Add-ons → Add-on Store → ⋮ → Repositories → додай https://github.com/07artem132/ha-signal-wsrpc → встанови **Signal WsRpcServer** → Start. За хвилину після старту HA покаже його в Settings → Devices & services → **Discovered**: натисни Configure і відскануй QR-код."
     },
     "progress": {
       "install": "Завантаження та встановлення сервера Signal (~150 МБ, один раз). Це може тривати кілька хвилин.",
