@@ -51,8 +51,8 @@
         "description": "The **{addon}** add-on is running. Continue to link your Signal account with a QR code."
       },
       "link_retry": {
-        "title": "QR code expired",
-        "description": "The code was not scanned in time ({error}). Press **Submit** to show a new QR code."
+        "title": "Linking did not finish",
+        "description": "The QR code was not scanned in time or linking failed ({error}). Press **Submit** to show a new QR code."
       }
     },
     "error": {
