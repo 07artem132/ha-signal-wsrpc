@@ -2,6 +2,14 @@
   "config": {
     "step": {
       "user": {
+        "title": "Signal (WsRpcServer)",
+        "description": "Як Home Assistant має підключатися до Signal?",
+        "menu_options": {
+          "managed": "Налаштувати все автоматично (рекомендовано)",
+          "external": "Підключитися до власного WsRpcServer"
+        }
+      },
+      "external": {
         "title": "Підключення до SignalCliNet.WsRpcServer",
         "description": "WebSocket JSON-RPC міст до Signal. Залиш інвайт-код порожнім, якщо сервер працює без auth (loopback / довірена мережа).",
         "data": {
@@ -17,6 +25,10 @@
           "account": "Signal-акаунт, прив'язаний на сервері, напр. +380501234567.",
           "invite_code": "Одноразовий код від адміна сервера (createInvite). Потрібен лише коли на сервері ввімкнено Auth."
         }
+      },
+      "link": {
+        "title": "Привʼяжіть акаунт Signal",
+        "description": "На телефоні відкрийте Signal → Налаштування → Привʼязані пристрої → Привʼязати новий пристрій і відскануйте QR-код:\n\n![QR]({qr_url})\n\nКод дійсний близько 2 хвилин."
       },
       "reauth_confirm": {
         "title": "Повторна автентифікація",
@@ -45,7 +57,14 @@
     "abort": {
       "already_configured": "Цей акаунт уже налаштовано.",
       "reauth_successful": "Повторна автентифікація успішна.",
-      "reconfigure_successful": "Налаштування оновлено."
+      "reconfigure_successful": "Налаштування оновлено.",
+      "unsupported_platform": "Автоматичний режим недоступний на цій системі: {error}. Оберіть «Підключитися до власного WsRpcServer».",
+      "managed_failed": "Не вдалося налаштувати сервер Signal: {error}",
+      "managed_no_reconfigure": "Сервером керує Home Assistant — тут нічого переналаштовувати."
+    },
+    "progress": {
+      "install": "Завантаження та встановлення сервера Signal (~150 МБ, один раз). Це може тривати кілька хвилин.",
+      "link": "На телефоні відкрийте Signal → Налаштування → Привʼязані пристрої → Привʼязати новий пристрій і відскануйте QR-код:\n\n![QR]({qr_url})\n\nОчікуємо сканування (близько 2 хвилин)…"
     }
   },
   "config_subentries": {

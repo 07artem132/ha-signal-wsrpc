@@ -2,6 +2,14 @@
   "config": {
     "step": {
       "user": {
+        "title": "Signal (WsRpcServer)",
+        "description": "How should Home Assistant reach Signal?",
+        "menu_options": {
+          "managed": "Set everything up for me (recommended)",
+          "external": "Connect to my own WsRpcServer"
+        }
+      },
+      "external": {
         "title": "Connect to SignalCliNet.WsRpcServer",
         "description": "WebSocket JSON-RPC bridge to Signal. Leave the invite code empty if the server runs without auth (loopback / trusted network).",
         "data": {
@@ -17,6 +25,10 @@
           "account": "The Signal account linked on the server, e.g. +380501234567.",
           "invite_code": "One-time code from the server admin (createInvite). Required only when the server has Auth enabled."
         }
+      },
+      "link": {
+        "title": "Link your Signal account",
+        "description": "On your phone open Signal → Settings → Linked devices → Link new device and scan this QR code:\n\n![QR]({qr_url})\n\nThe code is valid for about 2 minutes."
       },
       "reauth_confirm": {
         "title": "Re-authenticate",
@@ -45,7 +57,14 @@
     "abort": {
       "already_configured": "This account is already configured.",
       "reauth_successful": "Re-authentication was successful.",
-      "reconfigure_successful": "Reconfiguration was successful."
+      "reconfigure_successful": "Reconfiguration was successful.",
+      "unsupported_platform": "Managed mode is not available on this system: {error}. Choose \"Connect to my own WsRpcServer\" instead.",
+      "managed_failed": "Setting up the Signal server failed: {error}",
+      "managed_no_reconfigure": "The server is managed by Home Assistant; there is nothing to reconfigure."
+    },
+    "progress": {
+      "install": "Downloading and installing the Signal server (~150 MB, one time). This can take a few minutes.",
+      "link": "On your phone open Signal → Settings → Linked devices → Link new device and scan this QR code:\n\n![QR]({qr_url})\n\nWaiting for the scan (about 2 minutes)…"
     }
   },
   "config_subentries": {

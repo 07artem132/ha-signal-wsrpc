@@ -2,8 +2,11 @@
 
 from __future__ import annotations
 
+import asyncio
+import io
 import logging
 import re
+from datetime import timedelta
 from collections.abc import Mapping
 from typing import Any
 
@@ -19,6 +22,7 @@ from homeassistant.config_entries import (
 )
 from homeassistant.const import CONF_NAME
 from homeassistant.core import HomeAssistant, callback
+from homeassistant.components.http.auth import async_sign_path
 from homeassistant.helpers.aiohttp_client import async_get_clientsession
 from homeassistant.helpers.selector import (
     TextSelector,
@@ -28,6 +32,7 @@ from homeassistant.helpers.selector import (
 
 from .client import (
     ConnectionOptions,
+    SignalWsRpcConnection,
     SignalWsRpcAuthError,
     SignalWsRpcAuthRequiredError,
     SignalWsRpcCallError,
@@ -43,14 +48,21 @@ from .const import (
     CONF_CA_CERT,
     CONF_DEVICE_KEY,
     CONF_INVITE_CODE,
+    CONF_MODE,
     CONF_RECEIVE,
     CONF_RECIPIENT,
     CONF_TOKEN,
     CONF_URL,
     CONF_VERIFY_SSL,
     DOMAIN,
+    LINK_DEVICE_NAME,
+    LINK_TIMEOUT,
+    MODE_MANAGED,
+    QR_VIEW_URL,
     SUBENTRY_RECIPIENT,
 )
+from .manager import ManagedServerError, UnsupportedPlatformError, detect_bundle_arch, get_manager
+from .views import qr_store
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -153,6 +165,127 @@ class SignalWsRpcConfigFlow(ConfigFlow, domain=DOMAIN):
 
     VERSION = 1
 
+    _install_task: asyncio.Task[None] | None = None
+    _link_task: asyncio.Task[str] | None = None
+    _manager_held = False
+    _qr_url: str = ""
+
+    async def async_step_user(self, user_input: dict[str, Any] | None = None) -> ConfigFlowResult:
+        """Choose: let the integration run the server, or connect to an existing one."""
+        return self.async_show_menu(step_id="user", menu_options=["managed", "external"])
+
+    # ------------------------------------------------------------------ managed mode
+
+    async def async_step_managed(self, user_input: dict[str, Any] | None = None) -> ConfigFlowResult:
+        """Download + install the server bundle (progress)."""
+        if self._install_task is None:
+            try:
+                await self.hass.async_add_executor_job(detect_bundle_arch)
+            except UnsupportedPlatformError as err:
+                return self.async_abort(reason="unsupported_platform", description_placeholders={"error": str(err)})
+            self._install_task = self.hass.async_create_task(get_manager(self.hass).async_install())
+        if not self._install_task.done():
+            return self.async_show_progress(
+                step_id="managed", progress_action="install", progress_task=self._install_task
+            )
+        try:
+            self._install_task.result()
+        except ManagedServerError as err:
+            self._error_detail = str(err)
+            return self.async_show_progress_done(next_step_id="managed_failed")
+        return self.async_show_progress_done(next_step_id="link")
+
+    async def async_step_managed_failed(self, user_input: dict[str, Any] | None = None) -> ConfigFlowResult:
+        """Install/start/link failed."""
+        return self.async_abort(reason="managed_failed", description_placeholders=self._placeholders())
+
+    async def async_step_link(self, user_input: dict[str, Any] | None = None) -> ConfigFlowResult:
+        """Start the server, show the link QR and wait for the scan."""
+        if self._link_task is None:
+            try:
+                manager = get_manager(self.hass)
+                if not self._manager_held:
+                    await manager.async_acquire()
+                    self._manager_held = True
+                conn, link = await self._start_link(manager.url)
+            except (ManagedServerError, SignalWsRpcError) as err:
+                self._error_detail = str(err)
+                return self.async_abort(reason="managed_failed", description_placeholders=self._placeholders())
+            qr_store(self.hass)[self.flow_id] = await self.hass.async_add_executor_job(
+                _qr_png, link["deviceLinkUri"]
+            )
+            self._qr_url = async_sign_path(
+                self.hass, QR_VIEW_URL.format(flow_id=self.flow_id), timedelta(minutes=3)
+            )
+            self._link_task = self.hass.async_create_task(self._finish_link(conn, link["sessionId"]))
+        if not self._link_task.done():
+            return self.async_show_progress(
+                step_id="link",
+                progress_action="link",
+                progress_task=self._link_task,
+                description_placeholders={"qr_url": self._qr_url},
+            )
+        qr_store(self.hass).pop(self.flow_id, None)
+        try:
+            self._account = self._link_task.result()
+        except (SignalWsRpcError, asyncio.TimeoutError) as err:
+            self._error_detail = str(err) or "QR was not scanned in time"
+            return self.async_show_progress_done(next_step_id="managed_failed")
+        return self.async_show_progress_done(next_step_id="managed_finish")
+
+    async def async_step_managed_finish(self, user_input: dict[str, Any] | None = None) -> ConfigFlowResult:
+        """Create the managed entry for the freshly linked account."""
+        await self.async_set_unique_id(self._account)
+        self._abort_if_unique_id_configured()
+        return self.async_create_entry(
+            title=f"Signal {self._account}",
+            data={CONF_MODE: MODE_MANAGED, CONF_ACCOUNT: self._account},
+        )
+
+    async def _start_link(self, url: str) -> tuple[SignalWsRpcConnection, dict[str, Any]]:
+        """startLink, retrying while signal-cli is still booting (JVM cold start)."""
+        session = async_get_clientsession(self.hass)
+        loop = asyncio.get_running_loop()
+        deadline = loop.time() + 90
+        while True:
+            conn = SignalWsRpcConnection(session, ConnectionOptions(url=url))
+            try:
+                await conn.open()
+                link = await conn.call("startLink", {})
+                if isinstance(link, dict) and link.get("sessionId") and link.get("deviceLinkUri"):
+                    return conn, link
+                raise SignalWsRpcError("startLink returned no session")
+            except SignalWsRpcError:
+                await conn.close()
+                if loop.time() > deadline:
+                    raise
+                await asyncio.sleep(3)
+
+    async def _finish_link(self, conn: SignalWsRpcConnection, session_id: str) -> str:
+        try:
+            result = await conn.call(
+                "finishLink", {"sessionId": session_id, "deviceName": LINK_DEVICE_NAME}, timeout=LINK_TIMEOUT
+            )
+        finally:
+            await conn.close()
+        number = result.get("number") if isinstance(result, dict) else None
+        if not number:
+            raise SignalWsRpcError("finishLink returned no account number")
+        return str(number)
+
+    @callback
+    def async_remove(self) -> None:
+        """Flow ended (created, aborted or closed): drop QR and our hold on the server."""
+        qr_store(self.hass).pop(self.flow_id, None)
+        for task in (self._install_task, self._link_task):
+            if task is not None and not task.done():
+                task.cancel()
+        if self._manager_held:
+            self._manager_held = False
+            self.hass.async_create_task(get_manager(self.hass).async_release())
+
+    # ------------------------------------------------------------------ external server
+
     _error_detail: str = ""
 
     async def _run_validation(
@@ -183,8 +316,8 @@ class SignalWsRpcConfigFlow(ConfigFlow, domain=DOMAIN):
     def _placeholders(self) -> dict[str, str]:
         return {"error": self._error_detail or "-"}
 
-    async def async_step_user(self, user_input: dict[str, Any] | None = None) -> ConfigFlowResult:
-        """First step: server + sending account (+ invite when the server has auth on)."""
+    async def async_step_external(self, user_input: dict[str, Any] | None = None) -> ConfigFlowResult:
+        """Existing server: URL + sending account (+ invite when the server has auth on)."""
         errors: dict[str, str] = {}
         if user_input is not None:
             account = user_input[CONF_ACCOUNT].strip()
@@ -203,7 +336,7 @@ class SignalWsRpcConfigFlow(ConfigFlow, domain=DOMAIN):
             }
         )
         return self.async_show_form(
-            step_id="user", data_schema=schema, errors=errors, description_placeholders=self._placeholders()
+            step_id="external", data_schema=schema, errors=errors, description_placeholders=self._placeholders()
         )
 
     async def async_step_reauth(self, entry_data: Mapping[str, Any]) -> ConfigFlowResult:
@@ -233,6 +366,8 @@ class SignalWsRpcConfigFlow(ConfigFlow, domain=DOMAIN):
         """Change server URL / TLS settings without losing the identity."""
         errors: dict[str, str] = {}
         entry = self._get_reconfigure_entry()
+        if entry.data.get(CONF_MODE) == MODE_MANAGED:
+            return self.async_abort(reason="managed_no_reconfigure")
         if user_input is not None:
             data = {**entry.data, **user_input}
             if (result := await self._run_validation(data, None, errors)) is not None:
@@ -257,6 +392,15 @@ class SignalWsRpcConfigFlow(ConfigFlow, domain=DOMAIN):
     ) -> dict[str, type[ConfigSubentryFlow]]:
         """Recipients are subentries — each becomes a notify entity."""
         return {SUBENTRY_RECIPIENT: RecipientSubentryFlow}
+
+
+def _qr_png(payload: str) -> bytes:
+    """QR as PNG (segno, pure Python)."""
+    import segno  # noqa: PLC0415 — requirement, імпорт лише коли потрібен
+
+    buffer = io.BytesIO()
+    segno.make(payload, error="m").save(buffer, kind="png", scale=8, border=3)
+    return buffer.getvalue()
 
 
 class SignalWsRpcOptionsFlow(OptionsFlow):

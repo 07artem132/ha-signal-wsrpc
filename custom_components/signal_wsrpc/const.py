@@ -29,3 +29,15 @@ SIGNAL_CONNECTION_STATE: Final = f"{DOMAIN}_connection_state_{{}}"
 
 # Bitmask from SignalCliNet.WsRpcServer `SignalEventTypes` (enum is serialized as a number).
 EVENT_TYPES_TEXT_MESSAGES: Final = 1 << 0
+
+# Managed mode (інтеграція сама качає й запускає WsRpcServer).
+CONF_MODE: Final = "mode"
+MODE_MANAGED: Final = "managed"
+MODE_EXTERNAL: Final = "external"
+MANAGED_SERVER_VERSION: Final = "2.2.1"
+RELEASE_BASE_URL: Final = (
+    "https://github.com/07artem132/SignalCliNet.WsRpcServer/releases/download/v{version}"
+)
+LINK_DEVICE_NAME: Final = "Home Assistant"
+LINK_TIMEOUT: Final = 150.0
+QR_VIEW_URL: Final = "/api/signal_wsrpc/link_qr/{flow_id}"

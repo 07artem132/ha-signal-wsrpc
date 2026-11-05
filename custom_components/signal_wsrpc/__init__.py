@@ -30,6 +30,8 @@ from .client import (
     SignalWsRpcError,
     build_ssl_context,
 )
+from .manager import ManagedServerError, get_manager
+from .views import LinkQrView
 from .const import (
     ATTR_CONFIG_ENTRY_ID,
     ATTR_MESSAGE,
@@ -37,6 +39,7 @@ from .const import (
     CONF_ACCOUNT,
     CONF_CA_CERT,
     CONF_DEVICE_KEY,
+    CONF_MODE,
     CONF_RECEIVE,
     CONF_TOKEN,
     CONF_URL,
@@ -44,6 +47,7 @@ from .const import (
     DOMAIN,
     EVENT_MESSAGE_RECEIVED,
     EVENT_TYPES_TEXT_MESSAGES,
+    MODE_MANAGED,
     SERVICE_SEND_MESSAGE,
     SIGNAL_CONNECTION_STATE,
 )
@@ -68,6 +72,7 @@ class SignalRuntimeData:
 
     client: SignalWsRpcClient
     reload_key: tuple[Any, ...]
+    managed: bool = False
 
 
 type SignalConfigEntry = ConfigEntry[SignalRuntimeData]
@@ -83,6 +88,7 @@ async def async_setup(hass: HomeAssistant, config: ConfigType) -> bool:
             return {"timestamp": result.get("timestamp") if isinstance(result, dict) else None}
         return None
 
+    hass.http.register_view(LinkQrView(hass))
     hass.services.async_register(
         DOMAIN,
         SERVICE_SEND_MESSAGE,
@@ -122,11 +128,23 @@ async def async_send(entry: SignalConfigEntry, recipients: list[str], message: s
 async def async_setup_entry(hass: HomeAssistant, entry: SignalConfigEntry) -> bool:
     """Connect to WsRpcServer and set up platforms."""
     data = entry.data
+    managed = data.get(CONF_MODE) == MODE_MANAGED
+    if managed:
+        manager = get_manager(hass)
+        try:
+            await manager.async_install()
+            await manager.async_acquire()
+        except ManagedServerError as err:
+            raise ConfigEntryNotReady(str(err)) from err
+        url = manager.url
+    else:
+        url = data[CONF_URL]
+
     ssl_context = await hass.async_add_executor_job(
-        build_ssl_context, data[CONF_URL], data.get(CONF_VERIFY_SSL, True), data.get(CONF_CA_CERT)
+        build_ssl_context, url, data.get(CONF_VERIFY_SSL, True), data.get(CONF_CA_CERT)
     )
     options = ConnectionOptions(
-        url=data[CONF_URL],
+        url=url,
         token=data.get(CONF_TOKEN),
         device_key_pem=data.get(CONF_DEVICE_KEY),
         ssl_context=ssl_context,
@@ -164,12 +182,18 @@ async def async_setup_entry(hass: HomeAssistant, entry: SignalConfigEntry) -> bo
     try:
         await client.connect_once()
     except SignalWsRpcAuthError as err:
+        if managed:
+            await get_manager(hass).async_release()
         raise ConfigEntryAuthFailed(str(err)) from err
     except SignalWsRpcError as err:
+        if managed:
+            await get_manager(hass).async_release()
         raise ConfigEntryNotReady(f"WsRpcServer unavailable: {err}") from err
 
     client.start()
-    entry.runtime_data = SignalRuntimeData(client=client, reload_key=_reload_key(entry))
+    entry.runtime_data = SignalRuntimeData(
+        client=client, reload_key=_reload_key(entry), managed=managed
+    )
     entry.async_on_unload(entry.add_update_listener(_async_reload))
     await hass.config_entries.async_forward_entry_setups(entry, PLATFORMS)
     return True
@@ -210,4 +234,6 @@ async def async_unload_entry(hass: HomeAssistant, entry: SignalConfigEntry) -> b
     unloaded = await hass.config_entries.async_unload_platforms(entry, PLATFORMS)
     if unloaded:
         await entry.runtime_data.client.stop()
+        if entry.runtime_data.managed:
+            await get_manager(hass).async_release()
     return unloaded

@@ -26,8 +26,14 @@ from .fake_server import FakeServerState, push_text_message
 ACCOUNT = "+380500000000"
 
 
-async def test_user_flow_without_auth(hass: HomeAssistant, fake_server: str, mock_setup_entry) -> None:
+
+async def _start_external(hass):
     result = await hass.config_entries.flow.async_init(DOMAIN, context={"source": SOURCE_USER})
+    assert result["type"] is FlowResultType.MENU
+    return await hass.config_entries.flow.async_configure(result["flow_id"], {"next_step_id": "external"})
+
+async def test_user_flow_without_auth(hass: HomeAssistant, fake_server: str, mock_setup_entry) -> None:
+    result = await _start_external(hass)
     assert result["type"] is FlowResultType.FORM
     result = await hass.config_entries.flow.async_configure(
         result["flow_id"], {CONF_URL: fake_server, CONF_ACCOUNT: ACCOUNT, CONF_VERIFY_SSL: True}
@@ -42,7 +48,7 @@ async def test_user_flow_with_invite(
 ) -> None:
     server_state.auth_enabled = True
     server_state.invites.add("INV-1")
-    result = await hass.config_entries.flow.async_init(DOMAIN, context={"source": SOURCE_USER})
+    result = await _start_external(hass)
     result = await hass.config_entries.flow.async_configure(
         result["flow_id"], {CONF_URL: fake_server, CONF_ACCOUNT: ACCOUNT, CONF_INVITE_CODE: "bad"}
     )
@@ -59,7 +65,7 @@ async def test_user_flow_with_invite(
 
 
 async def test_cannot_connect(hass: HomeAssistant, socket_enabled) -> None:
-    result = await hass.config_entries.flow.async_init(DOMAIN, context={"source": SOURCE_USER})
+    result = await _start_external(hass)
     result = await hass.config_entries.flow.async_configure(
         result["flow_id"], {CONF_URL: "ws://127.0.0.1:1/", CONF_ACCOUNT: ACCOUNT}
     )
@@ -153,7 +159,7 @@ async def test_auth_required_error(
     hass: HomeAssistant, fake_server: str, server_state: FakeServerState
 ) -> None:
     server_state.auth_enabled = True
-    result = await hass.config_entries.flow.async_init(DOMAIN, context={"source": SOURCE_USER})
+    result = await _start_external(hass)
     result = await hass.config_entries.flow.async_configure(
         result["flow_id"], {CONF_URL: fake_server, CONF_ACCOUNT: ACCOUNT}
     )
@@ -162,7 +168,7 @@ async def test_auth_required_error(
 
 
 async def test_cannot_connect_has_reason(hass: HomeAssistant, socket_enabled) -> None:
-    result = await hass.config_entries.flow.async_init(DOMAIN, context={"source": SOURCE_USER})
+    result = await _start_external(hass)
     result = await hass.config_entries.flow.async_configure(
         result["flow_id"], {CONF_URL: "http://127.0.0.1:1/", CONF_ACCOUNT: ACCOUNT}
     )

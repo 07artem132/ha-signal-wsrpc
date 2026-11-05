@@ -20,6 +20,8 @@ as Home Assistant events, so you don't need to poll.
   Signal timestamp back.
 - **Event** `signal_wsrpc_message_received` for incoming text messages, which you can use as an
   automation trigger.
+- **Managed mode**: downloads, verifies and supervises a local server (auto-restart), links your
+  account with a QR code right in the setup dialog.
 - **Connectivity** binary sensor.
 - Auto-reconnect with jittered backoff, a keepalive `ping`, and re-subscribe after a reconnect.
 - Server auth (`Server:Auth:Enabled=true`): one-time invite → ECDSA P-256 device key
@@ -31,12 +33,16 @@ as Home Assistant events, so you don't need to poll.
 ## Requirements
 
 - Home Assistant 2025.3 or newer (config sub-entries).
-- **A running SignalCliNet.WsRpcServer with a linked Signal account.** The integration is a client
-  and does not start the server for you yet (a "managed mode" that downloads and runs it is planned).
+- One of:
+  - **Managed mode (recommended, plug-and-play)**: Home Assistant **Core (Python venv) on Linux with
+    glibc**, x86_64 or aarch64 (Debian, Ubuntu, Raspberry Pi OS 64-bit…). The integration downloads
+    the server bundle itself (~150 MB, one time; server + Java runtime + signal-cli, SHA-256 verified
+    against the release) and runs it in the background on `127.0.0.1`. Nothing to install by hand.
+  - **External server**: any SignalCliNet.WsRpcServer you run yourself (Docker, another host, …).
+    Use this on **Home Assistant OS**, **Supervised** and the **HA Docker image**: they run HA in an Alpine/musl container, and Signal's
+    native library has no musl build, so managed mode can't run there.
 
-### Prerequisites: run WsRpcServer first
-
-The quickest way is on the same host as Home Assistant, on loopback, without auth:
+### External server: quick start
 
 ```bash
 git clone https://github.com/07artem132/SignalCliNet.WsRpcServer && cd SignalCliNet.WsRpcServer
@@ -60,7 +66,15 @@ category *Integration* → install **Signal (WsRpcServer)** → restart Home Ass
 
 ## Setup
 
-*Settings → Devices & services → Add integration → Signal (WsRpcServer)*
+*Settings → Devices & services → Add integration → Signal (WsRpcServer)*, then pick one:
+
+**Set everything up for me (managed).** The integration downloads and starts the server, then shows
+a QR code. On your phone open Signal → *Settings → Linked devices → Link new device* and scan it.
+Done: Home Assistant becomes a linked device of your Signal account (like Signal Desktop), and
+messages are sent from your number. Server data lives in `<config>/signal_wsrpc/` (back it up with
+your config; it holds the Signal keys).
+
+**Connect to my own WsRpcServer.**
 
 | Field | Example | Notes |
 |---|---|---|
