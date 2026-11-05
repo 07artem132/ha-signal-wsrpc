@@ -66,11 +66,24 @@ async def release_server(socket_enabled):
 
 
 def test_detect_arch_rejects_musl() -> None:
+    # musl не знає CS_GNU_LIBC_VERSION → os.confstr кидає ValueError.
     with patch.object(mgr.platform, "system", return_value="Linux"), patch.object(
-        mgr.platform, "libc_ver", return_value=("", "")
-    ), patch.object(mgr.os.path, "exists", return_value=False):
+        mgr.os, "confstr", side_effect=ValueError
+    ), patch.object(mgr.platform, "libc_ver", return_value=("", "")), patch.object(
+        mgr.os.path, "exists", return_value=True
+    ):
         with pytest.raises(mgr.UnsupportedPlatformError):
             mgr.detect_bundle_arch()
+
+
+def test_detect_arch_glibc_when_libc_ver_is_blind() -> None:
+    # Деякі збірки Python (uv / python-build-standalone): libc_ver() == ('', ''), хоча хост glibc.
+    with patch.object(mgr.platform, "system", return_value="Linux"), patch.object(
+        mgr.os, "confstr", return_value="glibc 2.36"
+    ), patch.object(mgr.platform, "libc_ver", return_value=("", "")), patch.object(
+        mgr.platform, "machine", return_value="x86_64"
+    ):
+        assert mgr.detect_bundle_arch() == "x64"
 
 
 @pytest.mark.parametrize(("machine", "arch"), [("x86_64", "x64"), ("aarch64", "arm64")])

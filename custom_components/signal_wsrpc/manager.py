@@ -47,11 +47,29 @@ class UnsupportedPlatformError(ManagedServerError):
     """Host can't run the bundle (musl, non-Linux, unsupported arch)."""
 
 
+def _is_glibc() -> bool:
+    """True on glibc hosts.
+
+    ``os.confstr`` asks the running libc itself, so it works for any Python build (venv, uv,
+    python-build-standalone) — ``platform.libc_ver()`` only scans the interpreter binary and returns
+    ``('', '')`` for some builds, which falsely flagged glibc hosts as musl.
+    """
+    try:
+        gnu = os.confstr("CS_GNU_LIBC_VERSION")
+    except (ValueError, OSError):
+        gnu = None
+    if gnu:
+        return gnu.startswith("glibc")
+    if os.path.exists("/etc/alpine-release"):
+        return False
+    return platform.libc_ver()[0] == "glibc"
+
+
 def detect_bundle_arch() -> str:
     """Return 'x64' / 'arm64' or raise UnsupportedPlatformError."""
     if platform.system() != "Linux":
         raise UnsupportedPlatformError(f"{platform.system()} is not supported (Linux only)")
-    if os.path.exists("/etc/alpine-release") or platform.libc_ver()[0] != "glibc":
+    if not _is_glibc():
         raise UnsupportedPlatformError(
             "musl/Alpine (Home Assistant OS or the HA container) is not supported in managed mode: "
             "use the add-on or connect to an external server"
