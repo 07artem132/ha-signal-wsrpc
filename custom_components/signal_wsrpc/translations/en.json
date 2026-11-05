@@ -29,7 +29,7 @@
       },
       "link": {
         "title": "Link your Signal account",
-        "description": "On your phone open Signal → Settings → Linked devices → Link new device and scan this QR code:\n\n![QR]({qr_url})\n\nThe code is valid for about 2 minutes."
+        "description": "On your phone open Signal → Settings → Linked devices → Link new device and scan this QR code:\n\n![QR]({qr_url})\n\nThen press **Submit**. The code is valid for about 2 minutes."
       },
       "reauth_confirm": {
         "title": "Re-authenticate",
@@ -74,7 +74,7 @@
     },
     "progress": {
       "install": "Downloading and installing the Signal server (~150 MB, one time). This can take a few minutes.",
-      "link": "On your phone open Signal → Settings → Linked devices → Link new device and scan this QR code:\n\n![QR]({qr_url})\n\nWaiting for the scan (about 2 minutes)…"
+      "link_wait": "Finishing the link…"
     },
     "flow_title": "{name}"
   },

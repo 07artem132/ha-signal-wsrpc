@@ -174,6 +174,7 @@ class SignalWsRpcConfigFlow(ConfigFlow, domain=DOMAIN):
     _manager_held = False
     _qr_url: str = ""
     _addon_url: str | None = None
+    _link_waiting = False
     _addon_name: str = "Signal WsRpcServer"
 
     async def async_step_user(self, user_input: dict[str, Any] | None = None) -> ConfigFlowResult:
@@ -291,22 +292,33 @@ class SignalWsRpcConfigFlow(ConfigFlow, domain=DOMAIN):
                 self.hass, QR_VIEW_URL.format(flow_id=self.flow_id), timedelta(minutes=3)
             )
             self._link_task = self.hass.async_create_task(self._finish_link(conn, link["sessionId"]))
+        if user_input is None:
+            # Форма з QR і кнопкою «Я відсканував» (Submit) — не чекаємо мовчки на таймаут.
+            return self.async_show_form(step_id="link", description_placeholders={"qr_url": self._qr_url})
+        return await self.async_step_link_wait()
+
+    async def async_step_link_wait(self, user_input: dict[str, Any] | None = None) -> ConfigFlowResult:
+        """User pressed «scanned»: wait for finishLink (usually already done)."""
+        assert self._link_task is not None
         if not self._link_task.done():
+            self._link_waiting = True
             return self.async_show_progress(
-                step_id="link",
-                progress_action="link",
-                progress_task=self._link_task,
-                description_placeholders={"qr_url": self._qr_url},
+                step_id="link_wait", progress_action="link_wait", progress_task=self._link_task
             )
         qr_store(self.hass).pop(self.flow_id, None)
+        waited, self._link_waiting = self._link_waiting, False
         try:
             self._account = self._link_task.result()
         except (SignalWsRpcError, asyncio.TimeoutError) as err:
-            # Не скануємо вчасно — не закриваємо flow (discovery б загубився), а пропонуємо новий QR.
+            # Не закриваємо flow (discovery б загубився) — пропонуємо новий QR.
             self._error_detail = str(err) or "QR was not scanned in time"
             self._link_task = None
-            return self.async_show_progress_done(next_step_id="link_retry")
-        return self.async_show_progress_done(next_step_id="managed_finish")
+            if waited:
+                return self.async_show_progress_done(next_step_id="link_retry")
+            return await self.async_step_link_retry()
+        if waited:
+            return self.async_show_progress_done(next_step_id="managed_finish")
+        return await self.async_step_managed_finish()
 
     async def async_step_link_retry(self, user_input: dict[str, Any] | None = None) -> ConfigFlowResult:
         """QR expired or linking failed: one click → fresh QR."""

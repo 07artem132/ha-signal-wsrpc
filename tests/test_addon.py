@@ -30,7 +30,10 @@ def _url(fake_server: str) -> str:
 
 async def _run_progress(hass: HomeAssistant, result):
     flow_id = result["flow_id"]
-    for _ in range(6):
+    for _ in range(8):
+        if result["type"] is FlowResultType.FORM and result["step_id"] == "link":
+            result = await hass.config_entries.flow.async_configure(flow_id, {})  # «Я відсканував»
+            continue
         if result["type"] is not FlowResultType.SHOW_PROGRESS:
             break
         await hass.async_block_till_done()
@@ -49,7 +52,7 @@ async def test_addon_discovery_links_account(
     assert result["step_id"] == "hassio_confirm"
 
     result = await hass.config_entries.flow.async_configure(result["flow_id"], {})
-    assert result["type"] is FlowResultType.SHOW_PROGRESS
+    assert result["type"] is FlowResultType.FORM
     assert result["step_id"] == "link"
     result = await _run_progress(hass, result)
 
@@ -129,7 +132,7 @@ async def test_qr_served_before_integration_setup(
         DOMAIN, context={"source": SOURCE_HASSIO}, data=_info(fake_server)
     )
     result = await hass.config_entries.flow.async_configure(result["flow_id"], {})
-    assert result["type"] is FlowResultType.SHOW_PROGRESS
+    assert result["type"] is FlowResultType.FORM
     qr_url = result["description_placeholders"]["qr_url"]
     assert "authSig=" in qr_url
 
@@ -184,8 +187,29 @@ async def test_user_addon_option_links_running_addon(
     ):
         result = await hass.config_entries.flow.async_init(DOMAIN, context={"source": SOURCE_USER})
         result = await hass.config_entries.flow.async_configure(result["flow_id"], {"next_step_id": "addon"})
-        assert result["type"] is FlowResultType.SHOW_PROGRESS
+        assert result["type"] is FlowResultType.FORM
         assert result["step_id"] == "link"
         result = await _run_progress(hass, result)
     assert result["type"] is FlowResultType.CREATE_ENTRY, result
     assert result["data"] == {CONF_MODE: MODE_ADDON, CONF_URL: _url(fake_server), CONF_ACCOUNT: "+380500000000"}
+
+
+async def test_scanned_pressed_before_link_finishes(
+    hass: HomeAssistant, fake_server: str, server_state: FakeServerState, mock_setup_entry
+) -> None:
+    """«Я відсканував» натиснули раніше, ніж телефон завершив — показуємо очікування, потім entry."""
+    import asyncio
+
+    assert await async_setup_component(hass, "http", {})
+    server_state.link_gate = asyncio.Event()
+    result = await hass.config_entries.flow.async_init(
+        DOMAIN, context={"source": SOURCE_HASSIO}, data=_info(fake_server)
+    )
+    result = await hass.config_entries.flow.async_configure(result["flow_id"], {})
+    assert result["step_id"] == "link"
+    result = await hass.config_entries.flow.async_configure(result["flow_id"], {})
+    assert result["type"] is FlowResultType.SHOW_PROGRESS
+    assert result["step_id"] == "link_wait"
+    server_state.link_gate.set()
+    result = await _run_progress(hass, result)
+    assert result["type"] is FlowResultType.CREATE_ENTRY, result

@@ -158,7 +158,10 @@ async def test_managed_flow_links_account(
         result = await hass.config_entries.flow.async_configure(result["flow_id"], {"next_step_id": "managed"})
         flow_id = result["flow_id"]
         # install → link (QR) → finish; кожен progress-крок завершується сам.
-        for _ in range(6):
+        for _ in range(8):
+            if result["type"] is FlowResultType.FORM and result["step_id"] == "link":
+                result = await hass.config_entries.flow.async_configure(flow_id, {})
+                continue
             if result["type"] is not FlowResultType.SHOW_PROGRESS:
                 break
             await hass.async_block_till_done()
