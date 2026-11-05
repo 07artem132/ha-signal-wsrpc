@@ -1,7 +1,6 @@
-ARG BUILD_FROM=ghcr.io/home-assistant/amd64-base-debian:bookworm
-FROM ${BUILD_FROM}
+# Мульти-арх base image HA (amd64 + arm64); build.yaml більше не потрібен.
+FROM ghcr.io/home-assistant/base-debian:bookworm-2026.10.3
 
-ARG BUILD_ARCH=amd64
 ARG SERVER_VERSION=2.3.2
 # SHA-256 бандлів релізу v2.3.2 (зафіксовані тут, а не лише з SHA256SUMS того ж релізу).
 ARG SHA256_X64=5c721ca4e09b3078c0e2e65a4cbbb64851a9ea3df4b23c296fa4f9708d4c572b
@@ -12,10 +11,11 @@ RUN apt-get update \
     && rm -rf /var/lib/apt/lists/*
 
 RUN set -eux; \
-    case "${BUILD_ARCH}" in \
-      amd64) arch=x64; sha="${SHA256_X64}" ;; \
+    machine="$(uname -m)"; \
+    case "${machine}" in \
+      x86_64) arch=x64; sha="${SHA256_X64}" ;; \
       aarch64) arch=arm64; sha="${SHA256_ARM64}" ;; \
-      *) echo "Непідтримувана архітектура: ${BUILD_ARCH}" >&2; exit 1 ;; \
+      *) echo "Непідтримувана архітектура: ${machine}" >&2; exit 1 ;; \
     esac; \
     name="SignalCliNet.WsRpcServer-${SERVER_VERSION}-linux-${arch}-bundle.tar.gz"; \
     curl -fsSL -o /tmp/bundle.tar.gz \
