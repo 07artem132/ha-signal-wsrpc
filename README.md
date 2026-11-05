@@ -38,9 +38,12 @@ as Home Assistant events, so you don't need to poll.
     glibc**, x86_64 or aarch64 (Debian, Ubuntu, Raspberry Pi OS 64-bit…). The integration downloads
     the server bundle itself (~150 MB, one time; server + Java runtime + signal-cli, SHA-256 verified
     against the release) and runs it in the background on `127.0.0.1`. Nothing to install by hand.
+  - **Add-on (Home Assistant OS / Supervised, plug-and-play)**: the **Signal WsRpcServer** add-on
+    from this repository, amd64 or aarch64. HAOS runs HA in an Alpine/musl container where Signal's
+    native library can't load, so the server runs in its own Debian-based add-on instead; Home
+    Assistant discovers it automatically.
   - **External server**: any SignalCliNet.WsRpcServer you run yourself (Docker, another host, …).
-    Use this on **Home Assistant OS**, **Supervised** and the **HA Docker image**: they run HA in an Alpine/musl container, and Signal's
-    native library has no musl build, so managed mode can't run there.
+    Use this for the **HA Docker image** (no add-ons there) or a server on another machine.
 
 ### External server: quick start
 
@@ -62,6 +65,11 @@ Link your Signal account once (`startLink` → scan the QR in Signal → *Linked
 **HACS:** HACS → ⋮ → *Custom repositories* → `https://github.com/07artem132/ha-signal-wsrpc`,
 category *Integration* → install **Signal (WsRpcServer)** → restart Home Assistant.
 
+**Add-on (HAOS / Supervised):** *Settings → Add-ons → Add-on Store → ⋮ → Repositories* → add
+`https://github.com/07artem132/ha-signal-wsrpc` → install **Signal WsRpcServer** → *Start*. The first
+install builds the add-on on your device and downloads ~200 MB, so it takes a few minutes. You still
+install the integration itself via HACS (above).
+
 **Manual:** copy `custom_components/signal_wsrpc` into `<config>/custom_components/` and restart.
 
 ## Setup
@@ -73,6 +81,13 @@ a QR code. On your phone open Signal → *Settings → Linked devices → Link n
 Done: Home Assistant becomes a linked device of your Signal account (like Signal Desktop), and
 messages are sent from your number. Server data lives in `<config>/signal_wsrpc/` (back it up with
 your config; it holds the Signal keys).
+
+**Add-on (HAOS).** Once the add-on is running, Home Assistant shows **Signal WsRpcServer** under
+*Settings → Devices & services → Discovered*. Click *Configure* → *Submit* and scan the QR code the
+same way as above. The server listens only on `127.0.0.1` (host network), and its data, including the
+Signal keys, lives in the add-on's `/data`, which is included in Home Assistant backups. If the account
+is already linked on the server (e.g. you removed and re-added the integration), it is reused, and no
+new linked device is created.
 
 **Connect to my own WsRpcServer.**
 

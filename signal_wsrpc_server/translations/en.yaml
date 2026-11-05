@@ -1,0 +1,7 @@
+configuration:
+  port:
+    name: Port
+    description: Local port (127.0.0.1 only). Change it only if 9876 is taken on the host.
+  log_level:
+    name: Log level
+    description: Server log level. Message bodies and phone numbers are never logged.

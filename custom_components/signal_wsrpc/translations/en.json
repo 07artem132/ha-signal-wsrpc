@@ -44,6 +44,10 @@
           "verify_ssl": "Verify TLS certificate",
           "ca_cert": "Custom CA certificate (PEM)"
         }
+      },
+      "hassio_confirm": {
+        "title": "Signal server add-on",
+        "description": "The **{addon}** add-on is running. Continue to link your Signal account with a QR code."
       }
     },
     "error": {
@@ -65,7 +69,8 @@
     "progress": {
       "install": "Downloading and installing the Signal server (~150 MB, one time). This can take a few minutes.",
       "link": "On your phone open Signal → Settings → Linked devices → Link new device and scan this QR code:\n\n![QR]({qr_url})\n\nWaiting for the scan (about 2 minutes)…"
-    }
+    },
+    "flow_title": "{name}"
   },
   "config_subentries": {
     "recipient": {

@@ -1,0 +1,22 @@
+name: Signal WsRpcServer
+version: "2.3.2"
+slug: signal_wsrpc_server
+description: Signal messenger for Home Assistant (signal-cli + WebSocket JSON-RPC), set up by QR code
+url: https://github.com/07artem132/ha-signal-wsrpc
+arch:
+  - amd64
+  - aarch64
+init: false
+startup: services
+boot: auto
+# Сервер слухає лише 127.0.0.1 без auth: host network дає HA Core (теж host network) доступ
+# по loopback, а назовні нічого не відкривається.
+host_network: true
+discovery:
+  - signal_wsrpc
+options:
+  port: 9876
+  log_level: Information
+schema:
+  port: port
+  log_level: list(Trace|Debug|Information|Warning|Error)

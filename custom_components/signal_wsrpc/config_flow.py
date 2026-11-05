@@ -24,6 +24,7 @@ from homeassistant.const import CONF_NAME
 from homeassistant.core import HomeAssistant, callback
 from homeassistant.components.http.auth import async_sign_path
 from homeassistant.helpers.aiohttp_client import async_get_clientsession
+from homeassistant.helpers.service_info.hassio import HassioServiceInfo
 from homeassistant.helpers.selector import (
     TextSelector,
     TextSelectorConfig,
@@ -57,6 +58,7 @@ from .const import (
     DOMAIN,
     LINK_DEVICE_NAME,
     LINK_TIMEOUT,
+    MODE_ADDON,
     MODE_MANAGED,
     QR_VIEW_URL,
     SUBENTRY_RECIPIENT,
@@ -169,10 +171,41 @@ class SignalWsRpcConfigFlow(ConfigFlow, domain=DOMAIN):
     _link_task: asyncio.Task[str] | None = None
     _manager_held = False
     _qr_url: str = ""
+    _addon_url: str | None = None
+    _addon_name: str = "Signal WsRpcServer"
 
     async def async_step_user(self, user_input: dict[str, Any] | None = None) -> ConfigFlowResult:
         """Choose: let the integration run the server, or connect to an existing one."""
         return self.async_show_menu(step_id="user", menu_options=["managed", "external"])
+
+    # ------------------------------------------------------------------ add-on (HAOS)
+
+    async def async_step_hassio(self, discovery_info: HassioServiceInfo) -> ConfigFlowResult:
+        """The Signal WsRpcServer add-on announced itself via Supervisor discovery."""
+        config = discovery_info.config
+        url = f"ws://{config.get('host', '127.0.0.1')}:{int(config['port'])}"
+        # uuid add-on'а: дедуплікує паралельні discovery-flow і поважає «Ignore».
+        await self.async_set_unique_id(discovery_info.uuid)
+        self._abort_if_unique_id_configured()
+        for entry in self._async_current_entries(include_ignore=False):
+            if entry.data.get(CONF_MODE) == MODE_ADDON:
+                if entry.data.get(CONF_URL) != url:
+                    # Порт add-on'а змінили в його налаштуваннях — оновлюємо URL і перепідключаємось.
+                    self.hass.config_entries.async_update_entry(entry, data={**entry.data, CONF_URL: url})
+                    self.hass.config_entries.async_schedule_reload(entry.entry_id)
+                return self.async_abort(reason="already_configured")
+        self._addon_url = url
+        self._addon_name = discovery_info.name or self._addon_name
+        self.context["title_placeholders"] = {"name": self._addon_name}
+        return await self.async_step_hassio_confirm()
+
+    async def async_step_hassio_confirm(self, user_input: dict[str, Any] | None = None) -> ConfigFlowResult:
+        """Confirm before showing the link QR."""
+        if user_input is None:
+            return self.async_show_form(
+                step_id="hassio_confirm", description_placeholders={"addon": self._addon_name}
+            )
+        return await self.async_step_link()
 
     # ------------------------------------------------------------------ managed mode
 
@@ -203,11 +236,20 @@ class SignalWsRpcConfigFlow(ConfigFlow, domain=DOMAIN):
         """Start the server, show the link QR and wait for the scan."""
         if self._link_task is None:
             try:
-                manager = get_manager(self.hass)
-                if not self._manager_held:
-                    await manager.async_acquire()
-                    self._manager_held = True
-                conn, link = await self._start_link(manager.url)
+                if self._addon_url is not None:
+                    url = self._addon_url
+                else:
+                    manager = get_manager(self.hass)
+                    if not self._manager_held:
+                        await manager.async_acquire()
+                        self._manager_held = True
+                    url = manager.url
+                if (existing := await self._unconfigured_account(url)) is not None:
+                    # Акаунт уже прив'язаний на сервері (напр. інтеграцію видалили й додали знову):
+                    # беремо його, а не лінкуємо ще один пристрій.
+                    self._account = existing
+                    return await self.async_step_managed_finish()
+                conn, link = await self._start_link(url)
             except (ManagedServerError, SignalWsRpcError) as err:
                 self._error_detail = str(err)
                 return self.async_abort(reason="managed_failed", description_placeholders=self._placeholders())
@@ -235,12 +277,43 @@ class SignalWsRpcConfigFlow(ConfigFlow, domain=DOMAIN):
 
     async def async_step_managed_finish(self, user_input: dict[str, Any] | None = None) -> ConfigFlowResult:
         """Create the managed entry for the freshly linked account."""
-        await self.async_set_unique_id(self._account)
+        await self.async_set_unique_id(self._account, raise_on_progress=False)
         self._abort_if_unique_id_configured()
-        return self.async_create_entry(
-            title=f"Signal {self._account}",
-            data={CONF_MODE: MODE_MANAGED, CONF_ACCOUNT: self._account},
-        )
+        if self._addon_url is not None:
+            data = {CONF_MODE: MODE_ADDON, CONF_URL: self._addon_url, CONF_ACCOUNT: self._account}
+        else:
+            data = {CONF_MODE: MODE_MANAGED, CONF_ACCOUNT: self._account}
+        return self.async_create_entry(title=f"Signal {self._account}", data=data)
+
+    async def _unconfigured_account(self, url: str) -> str | None:
+        """First account already linked on the server that has no config entry yet (else None)."""
+        configured = {entry.unique_id for entry in self._async_current_entries(include_ignore=False)}
+        session = async_get_clientsession(self.hass)
+        loop = asyncio.get_running_loop()
+        deadline = loop.time() + 90
+        while True:
+            conn = SignalWsRpcConnection(session, ConnectionOptions(url=url))
+            try:
+                await conn.open()
+                result = await conn.call("listAccounts", {})
+                break
+            except SignalWsRpcCallError as err:
+                _LOGGER.debug("listAccounts недоступний (%s), переходимо до лінкування", err.code)
+                return None
+            except SignalWsRpcError:
+                # signal-cli ще стартує (холодний старт JVM) — пробуємо ще.
+                if loop.time() > deadline:
+                    raise
+                await asyncio.sleep(3)
+            finally:
+                await conn.close()
+        if isinstance(result, dict):  # масив або обгортка {"items": [...]}
+            result = result.get("items") or result.get("Items")
+        for item in result if isinstance(result, list) else []:
+            number = item.get("number") if isinstance(item, dict) else None
+            if number and number not in configured:
+                return str(number)
+        return None
 
     async def _start_link(self, url: str) -> tuple[SignalWsRpcConnection, dict[str, Any]]:
         """startLink, retrying while signal-cli is still booting (JVM cold start)."""
@@ -366,7 +439,7 @@ class SignalWsRpcConfigFlow(ConfigFlow, domain=DOMAIN):
         """Change server URL / TLS settings without losing the identity."""
         errors: dict[str, str] = {}
         entry = self._get_reconfigure_entry()
-        if entry.data.get(CONF_MODE) == MODE_MANAGED:
+        if entry.data.get(CONF_MODE) in (MODE_MANAGED, MODE_ADDON):
             return self.async_abort(reason="managed_no_reconfigure")
         if user_input is not None:
             data = {**entry.data, **user_input}

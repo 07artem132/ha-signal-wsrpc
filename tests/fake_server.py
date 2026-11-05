@@ -26,6 +26,7 @@ class FakeServerState:
     sockets: list[web.WebSocketResponse] = field(default_factory=list)
     link_number: str = "+380500000000"
     link_requests: list[dict[str, Any]] = field(default_factory=list)
+    accounts: list[str] = field(default_factory=list)  # вже прив'язані на сервері
 
 
 def _verify(spki_b64: str, nonce: str, conn_id: str, sig_b64: str) -> bool:
@@ -106,6 +107,8 @@ def make_app(state: FakeServerState) -> web.Application:
             elif method == "subscribe":
                 state.subscriptions.append(params)
                 await reply(req_id, len(state.subscriptions))
+            elif method == "listAccounts":
+                await reply(req_id, [{"number": n} for n in state.accounts])
             elif method == "startLink":
                 await reply(req_id, {"sessionId": "link-1", "deviceLinkUri": "sgnl://linkdevice?uuid=x&pub_key=y"})
             elif method == "finishLink":
