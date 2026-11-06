@@ -213,3 +213,17 @@ async def test_scanned_pressed_before_link_finishes(
     server_state.link_gate.set()
     result = await _run_progress(hass, result)
     assert result["type"] is FlowResultType.CREATE_ENTRY, result
+
+
+async def test_addon_discovery_ignored_when_connected_manually(hass: HomeAssistant, fake_server: str) -> None:
+    """Add-on уже підключено як «external» з тим самим URL → discovery не показується знову."""
+    MockConfigEntry(
+        domain=DOMAIN,
+        unique_id="+380500000000",
+        data={CONF_URL: _url(fake_server), CONF_ACCOUNT: "+380500000000"},
+    ).add_to_hass(hass)
+    result = await hass.config_entries.flow.async_init(
+        DOMAIN, context={"source": SOURCE_HASSIO}, data=_info(fake_server)
+    )
+    assert result["type"] is FlowResultType.ABORT
+    assert result["reason"] == "already_configured"

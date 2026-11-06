@@ -206,6 +206,9 @@ class SignalWsRpcConfigFlow(ConfigFlow, domain=DOMAIN):
         await self.async_set_unique_id(discovery_info.uuid)
         self._abort_if_unique_id_configured()
         for entry in self._async_current_entries(include_ignore=False):
+            if entry.data.get(CONF_MODE) != MODE_ADDON and entry.data.get(CONF_URL) == url:
+                # Той самий add-on, але підключений вручну («Connect to my own WsRpcServer»).
+                return self.async_abort(reason="already_configured")
             if entry.data.get(CONF_MODE) == MODE_ADDON:
                 if entry.data.get(CONF_URL) != url:
                     # Порт add-on'а змінили в його налаштуваннях — оновлюємо URL і перепідключаємось.
