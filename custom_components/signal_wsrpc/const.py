@@ -36,7 +36,7 @@ MODE_MANAGED: Final = "managed"
 MODE_EXTERNAL: Final = "external"
 MODE_ADDON: Final = "addon"
 ADDON_DEFAULT_URL: Final = "ws://127.0.0.1:9876"  # порт add-on'а за замовчуванням (host network)
-MANAGED_SERVER_VERSION: Final = "2.3.2"
+MANAGED_SERVER_VERSION: Final = "2.3.4"
 RELEASE_BASE_URL: Final = (
     "https://github.com/07artem132/SignalCliNet.WsRpcServer/releases/download/v{version}"
 )

@@ -1,5 +1,5 @@
 name: Signal WsRpcServer
-version: "2.3.2-1"
+version: "2.3.4"
 slug: signal_wsrpc_server
 description: Signal messenger for Home Assistant (signal-cli + WebSocket JSON-RPC), set up by QR code
 url: https://github.com/07artem132/ha-signal-wsrpc
